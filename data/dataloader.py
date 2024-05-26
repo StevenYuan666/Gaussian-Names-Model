@@ -25,6 +25,7 @@ class DateDataset(Dataset):
     def __getitem__(self, index):
         row = self.df.iloc[index]
         row_embeddings = []
+        target = []
         for column_value in row:
             encoded = self.tokenizer.encode_plus(
                 self.tokenizer.cls_token + column_value,
@@ -35,6 +36,7 @@ class DateDataset(Dataset):
                 return_attention_mask=True,
                 add_special_tokens=True,
             ).to(device)
+            target.append(encoded["input_ids"][1:])
             with torch.no_grad():
                 bert_output = self.bert_model(**encoded)
             cls_embedding = bert_output.last_hidden_state[:, 0, :]
@@ -56,9 +58,10 @@ if __name__ == "__main__":
     # Create dataset and dataloader
     model = BertModel.from_pretrained("bert-base-uncased")
     dataset = DateDataset(df, tokenizer, model, max_len=10)
-    dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
 
     # Test the DataLoader
-    for batch in dataloader:
-        print("Batch Shape:", batch.shape)
+    for x, y in dataloader:
+        print("X Shape:", x.shape)
+        print("Y Shape:", y.shape)
         break
