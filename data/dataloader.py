@@ -2,46 +2,41 @@ import json
 import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
-from transformers import BertTokenizer, BertModel
-
-# device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("Device:", device)
+from GNM.tokenizer import GPT2Tokenizer
 
 
 # Custom Dataset
 class DateDataset(Dataset):
-    def __init__(self, df, tokenizer, bert_model, max_len=10, size=None):
+    def __init__(self, df, config, tokenizer=GPT2Tokenizer(), max_len=15, size=None):
         if size:
             df = df.sample(size)
         self.df = df
         self.tokenizer = tokenizer
-        self.bert_model = bert_model.to(device)
         self.max_len = max_len
+        config.update(
+            {
+                "num_fields": len(df.columns),
+                "vocab_size": len(tokenizer),
+                "categorical_pad_token_id": 0,
+            }
+        )
 
     def __len__(self):
         return len(self.df)
 
     def __getitem__(self, index):
         row = self.df.iloc[index]
-        row_embeddings = []
         target = []
         for column_value in row:
-            encoded = self.tokenizer.encode_plus(
-                self.tokenizer.cls_token + column_value,
-                max_length=self.max_len,
-                padding="max_length",
-                truncation=True,
-                return_tensors="pt",
-                return_attention_mask=True,
-                add_special_tokens=True,
-            ).to(device)
-            target.append(encoded["input_ids"][1:])
-            with torch.no_grad():
-                bert_output = self.bert_model(**encoded)
-            cls_embedding = bert_output.last_hidden_state[:, 0, :]
-            row_embeddings.append(cls_embedding.squeeze())
-        return torch.stack(row_embeddings).to("cpu")
+            encoded = self.tokenizer.encode(
+                self.tokenizer.cls_token + " " + column_value,
+            )
+            if len(encoded) < self.max_len:
+                encoded += [self.tokenizer.pad_token_id] * (self.max_len - len(encoded))
+            else:
+                encoded = encoded[: self.max_len]
+            target.append(encoded)
+        return torch.tensor(target)
 
 
 if __name__ == "__main__":
@@ -52,16 +47,17 @@ if __name__ == "__main__":
     # Convert JSON data to DataFrame
     df = pd.DataFrame.from_dict(data, orient="index")
 
-    # Use BERT Tokenizer
-    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+    from GNM.config import defaults_customLM as config
+    from GNM.utils import parse_args
+
+    config = parse_args(config)
 
     # Create dataset and dataloader
-    model = BertModel.from_pretrained("bert-base-uncased")
-    dataset = DateDataset(df, tokenizer, model, max_len=10)
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
+    dataset = DateDataset(df, config, max_len=15)
+    dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
 
     # Test the DataLoader
-    for x, y in dataloader:
+    for x in dataloader:
         print("X Shape:", x.shape)
-        print("Y Shape:", y.shape)
+        print(x)
         break
