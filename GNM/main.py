@@ -105,7 +105,7 @@ for epoch in range(config["epochs"]):
                 "train_loss_epoch": train_loss / len(dataloader),
             }
         )
-    if (epoch + 1) % 100 == 0:
+    if (epoch + 1) % 10 == 0:
         torch.save(model.state_dict(), f"denoise_model_epoch{epoch + 1}.pt")
         torch.save(text_model.state_dict(), f"text_model_epoch{epoch + 1}.pt")
 wandb.finish()
