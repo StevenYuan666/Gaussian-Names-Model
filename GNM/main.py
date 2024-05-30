@@ -1,11 +1,4 @@
-from modules import TextModule
-from config import defaults_customLM as config
-from utils import parse_args
-import json
-import pandas as pd
-from data.dataloader import DateDataset
-from torch.utils.data import DataLoader
-import torch
+import tqdm
 from model import *
 import wandb
 
@@ -37,49 +30,18 @@ if config["wandb"]:
             name=run_name,
         )
 
-text_model = TextModule(config)
-model = TransformerDenoiseModel(feature_size=config["d_model"])
-betas = linear_beta_schedule(T=1000)  # Define this function as provided in earlier steps
-text_model.to(config["device"])
+model = GaussianNamesModel(config)
 model.to(config["device"])
-model.double()
 loss_fn = torch.nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(nn.ModuleList([text_model, model]).parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
+optimizer = torch.optim.Adam(GaussianNamesModel.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
 # Train the model
 step = 0
 for epoch in range(config["epochs"]):
     loop = tqdm(dataloader, leave=True)
     train_loss = 0
     for x in loop:
-        # Encode the text
         x = x.to(config["device"])  # (batch_size, num_of_properties, max_len)
-        x0 = torch.zeros(x.shape[0], x.shape[1], config["d_model"]).to(config["device"])
-        for j in range(x.shape[1]):
-            output = text_model.encoder(
-                x[:, j, :], padding_mask=(x[:, j, :] != 0).float()
-            )  # (batch_size, max_len, d_model)
-            if config["text_model"] == "custom":
-                x0[:, j] = output[:, 0]  # (batch_size, d_model)
-            else:
-                x0[:, j] = output.last_hidden_state[:, 0]  # (batch_size, d_model)
-
-
-        # Perturb the input
-        t = np.random.randint(0, 1000)
-        xt, noise = q_sample(x0, t, betas)  # (batch_size, num_of_properties, d_model)
-        xt = xt.to(device)
-        x0_pred = model(xt, t)  # (batch_size, num_of_properties, d_model)
-
-        # Decode the x0_pred back to text
-        prediction = []
-        loss = 0
-        for j in range(x0_pred.shape[1]):
-            target = text_model._shift_right(x[:, j, :])  # (batch_size, max_len)
-            output = text_model.decoder(target, x0[:, j].unsqueeze(1))  # (batch_size, max_len, vocab_size)
-            output = output.unsqueeze(1)
-            prediction.append(output)
-        prediction = torch.cat(prediction, dim=1)  # (batch_size, num_of_properties, max_len, vocab_size)
-
+        prediction = model(x)
         loss = loss_fn(prediction.view(-1, prediction.size(-1)), x.view(-1))
         optimizer.zero_grad()
         loss.backward()
@@ -106,7 +68,6 @@ for epoch in range(config["epochs"]):
             }
         )
     if (epoch + 1) % 10 == 0:
-        torch.save(model.state_dict(), f"denoise_model_epoch{epoch + 1}.pt")
-        torch.save(text_model.state_dict(), f"text_model_epoch{epoch + 1}.pt")
+        torch.save(model.state_dict(), f"Gaussian_Names_Model_epoch{epoch + 1}.pt")
 wandb.finish()
 print("Training complete!")

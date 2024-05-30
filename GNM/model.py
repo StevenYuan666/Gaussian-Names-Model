@@ -1,12 +1,11 @@
 from data.dataloader import *
-from torch.utils.data import DataLoader, random_split
 import torch
 import torch.nn as nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
-from tqdm import tqdm
 import numpy as np
 import torch.backends.cudnn as cudnn
 import random
+from modules import TextModule
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -60,30 +59,6 @@ class PositionalEncoding(nn.Module):
         return self.pe[t, :].expand(batch_size, feature_size, -1)
 
 
-def train_model(model, dataloader, betas, T=1000, num_epochs=10):
-    model.train()
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-    best_val_loss = float("inf")
-    no_improvement = 0
-    for epoch in range(num_epochs):
-        train_loss = 0
-        loop = tqdm(dataloader, leave=True)
-        for x_0 in loop:
-            t = np.random.randint(0, T)
-            x_t, noise = q_sample(x_0, t, betas)
-            x_t = x_t.to(device)
-            noise = noise.to(device)
-            noise_pred = model(x_t, t)
-            loss = (noise_pred - noise).pow(2).mean()
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            loop.set_description(f"Epoch [{epoch + 1}/{num_epochs}]")
-            loop.set_postfix(loss=loss.item())
-            train_loss += loss.item()
-        print(f"Epoch [{epoch + 1}/{num_epochs}], Loss: {train_loss / len(dataloader)}")
-
-
 def set_seed(seed):
     torch.cuda.manual_seed(seed)
     torch.manual_seed(seed)
@@ -93,33 +68,40 @@ def set_seed(seed):
     cudnn.benchmark = False
 
 
-set_seed(1205)
+class GaussianNamesModel(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.text_model = TextModule(config)
+        self.model = TransformerDenoiseModel(feature_size=config["d_model"])
+        self.betas = linear_beta_schedule(T=1000)  # Define this function as provided in earlier steps
+        self.text_model.double()
+        self.model.double()
 
-# Load JSON data
-# with open("../data/date_dataset.json", "r") as file:
-#     data = json.load(file)
-#
-# # Convert JSON data to DataFrame
-# df = pd.DataFrame.from_dict(data, orient="index")
-#
-# # Initialize BERT components
-# tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-# bert_model = BertModel.from_pretrained("bert-base-uncased")
-#
-# #  Create dataset and dataloader
-# dataset = DateDataset(df, tokenizer, bert_model)
-#
-# val_size = 50
-# train_size = len(dataset) - val_size
-# train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
-#
-# train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-# val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
-#
-# # Initialize and train the model
-# hidden_size = bert_model.config.hidden_size
-# model = TransformerDenoiseModel(feature_size=bert_model.config.hidden_size)
-# model.to(device)
-# model.double()
-# betas = linear_beta_schedule(T=1000)  # Define this function as provided in earlier steps
-# train_model(model, train_loader, val_loader, betas, T=1000, num_epochs=100)
+    def forward(self, x):
+        # Encode the text
+        x0 = torch.zeros(x.shape[0], x.shape[1], self.config["d_model"]).to(self.config["device"])
+        for j in range(x.shape[1]):
+            output = self.text_model.encoder(
+                x[:, j, :], padding_mask=(x[:, j, :] != 0).float()
+            )  # (batch_size, max_len, d_model)
+            if self.config["text_model"] == "custom":
+                x0[:, j] = output[:, 0]  # (batch_size, d_model)
+            else:
+                x0[:, j] = output.last_hidden_state[:, 0]  # (batch_size, d_model)
+
+        # Perturb the input
+        t = np.random.randint(0, 1000)
+        xt, noise = q_sample(x0, t, self.betas)  # (batch_size, num_of_properties, d_model)
+        xt = xt.to(device)
+        x0_pred = self.model(xt, t)  # (batch_size, num_of_properties, d_model)
+
+        # Decode the x0_pred back to text
+        prediction = []
+        for j in range(x0_pred.shape[1]):
+            target = self.text_model._shift_right(x[:, j, :])  # (batch_size, max_len)
+            output = self.text_model.decoder(target, x0[:, j].unsqueeze(1))  # (batch_size, max_len, vocab_size)
+            output = output.unsqueeze(1)
+            prediction.append(output)
+        prediction = torch.cat(prediction, dim=1)  # (batch_size, num_of_properties, max_len, vocab_size)
+        return prediction
