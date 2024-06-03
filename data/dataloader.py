@@ -3,14 +3,22 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
 from GNM.tokenizer import GPT2Tokenizer
+from transformers import T5Tokenizer
 
 
 # Custom Dataset
 class DateDataset(Dataset):
-    def __init__(self, df, config, tokenizer=GPT2Tokenizer(), max_len=15, size=None):
+    def __init__(self, df, config, max_len=15, size=None):
         if size:
             df = df.sample(size)
         self.df = df
+        self.config = config
+        if config["tokenizer"] == "gpt2":
+            tokenizer = GPT2Tokenizer()
+        elif config["tokenizer"] == "t5-small":
+            tokenizer = T5Tokenizer.from_pretrained("google-t5/t5-small")
+            tokenizer.add_tokens(["<cls>"])
+            tokenizer.cls_token = "<cls>"
         self.tokenizer = tokenizer
         self.max_len = max_len
         config.update(
@@ -28,9 +36,14 @@ class DateDataset(Dataset):
         row = self.df.iloc[index]
         target = []
         for column_value in row:
-            encoded = self.tokenizer.encode(
-                self.tokenizer.cls_token + " " + column_value,
-            )
+            if self.config["tokenizer"] == "gpt2":
+                encoded = self.tokenizer.encode(
+                    self.tokenizer.cls_token + " " + column_value,
+                )
+            elif self.config["tokenizer"] == "t5-small":
+                encoded = self.tokenizer.encode(
+                    self.tokenizer.cls_token + " " + column_value,
+                )
             if len(encoded) < self.max_len:
                 encoded += [self.tokenizer.pad_token_id] * (self.max_len - len(encoded))
             else:

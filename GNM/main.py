@@ -1,8 +1,17 @@
-import tqdm
 from model import *
 import wandb
+from utils import parse_args
+from config import defaults_hf as config
+# from config import defaults_customLM as config
+import json
+import pandas as pd
+from data.dataloader import DateDataset
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+import os
 
-
+os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+os.environ["PYTORCH_USE_CUDA_DSA"] = "1"
 config = parse_args(config)
 set_seed(config["seed"])
 print("Seed:", config["seed"])
@@ -25,15 +34,15 @@ if config["wandb"]:
         )
         wandb.login()
         wandb.init(
-            project=f"Unified Continuous Diffusion Models with Text Encoder-Decoder",
+            project=f"(Pretrained-T5) Unified Continuous Diffusion Models with Text Encoder-Decoder",
             config=config,
             name=run_name,
         )
 
-model = GaussianNamesModel(config)
+model = GaussianNamesModel(config, dataset.tokenizer)
 model.to(config["device"])
 loss_fn = torch.nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(GaussianNamesModel.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
+optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
 # Train the model
 step = 0
 for epoch in range(config["epochs"]):
@@ -57,8 +66,8 @@ for epoch in range(config["epochs"]):
             )
         if step % 100 == 0:
             print()
-            print("Prediction:", dataset.tokenizer.batch_decode(torch.argmax(prediction[0], dim=-1)))
-            print("Ground truth:", dataset.tokenizer.batch_decode(x[0]))
+            print("Prediction:", dataset.tokenizer.batch_decode(torch.argmax(prediction[0], dim=-1), skip_special_tokens=True))
+            print("Ground truth:", dataset.tokenizer.batch_decode(x[0], skip_special_tokens=True))
         step += 1
     print(f"Epoch [{epoch + 1}/{config['epochs']}], Loss: {train_loss / len(dataloader)}")
     if config["wandb"]:
