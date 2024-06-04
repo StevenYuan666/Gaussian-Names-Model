@@ -1,8 +1,8 @@
 from model import *
 import wandb
 from utils import parse_args
-from config import defaults_hf as config
-# from config import defaults_customLM as config
+# from config import defaults_hf as config
+from config import defaults_customLM as config
 import json
 import pandas as pd
 from data.dataloader import DateDataset
@@ -18,7 +18,7 @@ print("Seed:", config["seed"])
 print("Device:", config["device"])
 
 # Load JSON data
-with open("../data/date_dataset.json", "r") as file:
+with open("../data/date_dataset_no_order.json", "r") as file:
     data = json.load(file)
 
 # Convert JSON data to DataFrame
@@ -34,7 +34,9 @@ if config["wandb"]:
         )
         wandb.login()
         wandb.init(
-            project=f"(Pretrained-T5) Unified Continuous Diffusion Models with Text Encoder-Decoder",
+            # project=f"(Pretrained-T5) Unified Continuous Diffusion Models with Text Encoder-Decoder",
+            # project=f"Unified Continuous Diffusion Models with Text Encoder-Decoder",
+            project=f"(No Order) Unified Continuous Diffusion Models with Text Encoder-Decoder",
             config=config,
             name=run_name,
         )
@@ -50,6 +52,7 @@ for epoch in range(config["epochs"]):
     train_loss = 0
     for x in loop:
         x = x.to(config["device"])  # (batch_size, num_of_properties, max_len)
+        x = x.long()
         prediction = model(x)
         loss = loss_fn(prediction.view(-1, prediction.size(-1)), x.view(-1))
         optimizer.zero_grad()

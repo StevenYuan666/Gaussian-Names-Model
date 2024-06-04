@@ -75,7 +75,9 @@ class GaussianNamesModel(nn.Module):
         self.model = TransformerDenoiseModel(feature_size=config["d_model"])
         self.betas = linear_beta_schedule(T=1000)  # Define this function as provided in earlier steps
         self.model.double()
-        self.text_model.model.resize_token_embeddings(len(tokenizer), pad_to_multiple_of=32)
+        self.text_model.double()
+        if config["text_model"] == "t5-small":
+            self.text_model.model.resize_token_embeddings(len(tokenizer), pad_to_multiple_of=32)
 
     def forward(self, x):
         # Encode the text
@@ -83,11 +85,11 @@ class GaussianNamesModel(nn.Module):
         for j in range(x.shape[1]):
             if self.config["text_model"] == "custom":
                 output = self.text_model.encoder(
-                    x[:, j, :], padding_mask=(x[:, j, :] != 0).float()
+                    x[:, j, :], padding_mask=(x[:, j, :] != 0).double()
                 )  # (batch_size, max_len, d_model)
             else:
                 output = self.text_model.encoder(
-                    x[:, j, :], attention_mask=(x[:, j, :] != 0).float()
+                    x[:, j, :], attention_mask=(x[:, j, :] != 0).double()
                 )  # (batch_size, max_len, d_model)
             if self.config["text_model"] == "custom":
                 x0[:, j] = output[:, 0]  # (batch_size, d_model)
@@ -104,7 +106,12 @@ class GaussianNamesModel(nn.Module):
         prediction = []
         for j in range(x0_pred.shape[1]):
             target = self.text_model._shift_right(x[:, j, :])  # (batch_size, max_len)
-            output = self.text_model.decoder(input_ids=target)  # (batch_size, max_len, vocab_size)
+            if self.config["text_model"] == "custom":
+                output = self.text_model.decoder(
+                    input_ids=target, encoder_hidden_states=x0_pred[:, j, :].unsqueeze(1)
+                )
+            else:
+                output = self.text_model.decoder(input_ids=target)  # (batch_size, max_len, vocab_size)
             output = output.unsqueeze(1)
             prediction.append(output)
         prediction = torch.cat(prediction, dim=1)  # (batch_size, num_of_properties, max_len, vocab_size)

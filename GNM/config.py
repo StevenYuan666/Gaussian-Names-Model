@@ -60,10 +60,11 @@ defaults_hf.update(
         "model" : "t5",
         "tokenizer": "t5-small",
         "text_model": "t5-small",
-        "freeze": False,
+        "freeze": True,
         "d_model": 512,
         "all_on_gpu": False,
         "use_mup": False,
+        "lr": 1e-2,              # Learning rate
     }
 )
 

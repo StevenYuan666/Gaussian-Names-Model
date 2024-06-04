@@ -2,3 +2,4 @@
 __pycache__/
 GNM/*.pth
 GNM/wandb/
+*.pt
