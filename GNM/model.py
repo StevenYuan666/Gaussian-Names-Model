@@ -4,7 +4,7 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 import numpy as np
 import torch.backends.cudnn as cudnn
 import random
-from modules import TextModule
+from .modules import TextModule
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

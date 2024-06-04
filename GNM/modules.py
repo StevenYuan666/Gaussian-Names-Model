@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 from mup import MuReadout, MuSharedReadout
-from positional_encodings import PositionalEncoding
-from transformer import TransformerDecoder, TransformerEncoder
+from .positional_encodings import PositionalEncoding
+from .transformer import TransformerDecoder, TransformerEncoder
 from functools import cache
 
 

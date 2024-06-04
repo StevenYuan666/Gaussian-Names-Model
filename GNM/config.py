@@ -20,7 +20,7 @@ common_defaults = {
                                            # 0 means individual decoders. n>0 is the number of experts used.
     "condition_decoders_on_hierarchy": 0,
     "tie_mask_embeddings": 0,        # Tie mask embeddings across fields (mask embs are what the entity encoder sees)
-    "epochs": 50,          # Number of epochs to train for
+    "epochs": 100,          # Number of epochs to train for
     "batch_size": 1024,        # Batch size
     "lr": 1e-2,              # Learning rate
     "weight_decay": 0.,     # Weight decay

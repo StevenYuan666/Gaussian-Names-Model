@@ -4,6 +4,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from GNM.tokenizer import GPT2Tokenizer
 from transformers import T5Tokenizer
+import random
 
 
 # Custom Dataset
@@ -80,15 +81,15 @@ class ARDateDataset(Dataset):
 
     def __getitem__(self, index):
         row = self.df.iloc[index]
-        input = self.tokenizer.encode(row[0], max_length=15, truncation=True, padding="max_length")
-        target = self.tokenizer.encode(self.tokenizer.sep_token.join(row[1:]), max_length=self.max_len, truncation=True, padding="max_length")
+        input = self.tokenizer(row[0], max_length=15, truncation=True, padding="max_length", return_tensors="pt")
+        target = self.tokenizer(self.tokenizer.sep_token.join(row[1:]), max_length=self.max_len, truncation=True, padding="max_length", return_tensors="pt")
 
-        return torch.tensor(input), torch.tensor(target)
+        return {"input": input.input_ids.squeeze(), "target": target.input_ids.squeeze(), "attention_mask": input.attention_mask.squeeze(), "target_attention_mask": target.attention_mask.squeeze()}
 
 
 if __name__ == "__main__":
     # Load JSON data
-    with open("date_dataset.json", "r") as file:
+    with open("date_dataset_no_order.json", "r") as file:
         data = json.load(file)
 
     # Convert JSON data to DataFrame
@@ -104,9 +105,6 @@ if __name__ == "__main__":
     dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
 
     # Test the DataLoader
-    for x, y in dataloader:
-        print("X Shape:", x.shape)
-        print("Y Shape:", y.shape)
-        print(x)
-        print(y)
+    for x in dataloader:
+        print(x["input"].shape, x["target"].shape, x["attention_mask"].shape, x["target_attention_mask"].shape)
         break
