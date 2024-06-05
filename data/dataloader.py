@@ -81,8 +81,30 @@ class ARDateDataset(Dataset):
 
     def __getitem__(self, index):
         row = self.df.iloc[index]
-        input = self.tokenizer(row[0], max_length=15, truncation=True, padding="max_length", return_tensors="pt")
-        target = self.tokenizer(self.tokenizer.sep_token.join(row[1:]), max_length=self.max_len, truncation=True, padding="max_length", return_tensors="pt")
+        # randomly choose a subset from the row
+        row = row.dropna().tolist()
+        the_one = random.sample(row, random.randint(1, len(row)-1))
+        others = [x for x in row if x not in the_one]
+        input = self.tokenizer(self.tokenizer.sep_token.join(the_one), max_length=15, truncation=True, padding="max_length", return_tensors="pt")
+        target = self.tokenizer(self.tokenizer.sep_token.join(others), max_length=self.max_len, truncation=True, padding="max_length", return_tensors="pt")
+
+        return {"input": input.input_ids.squeeze(), "target": target.input_ids.squeeze(), "attention_mask": input.attention_mask.squeeze(), "target_attention_mask": target.attention_mask.squeeze()}
+
+
+class ARTestDataset(ARDateDataset):
+    def __init__(self, df, config, max_len=128, size=None):
+        super().__init__(df, config, max_len, size)
+        self.df = df[:size]
+    def __getitem__(self, index):
+        row = self.df.iloc[index]
+        row = row.dropna().tolist()
+        random_list = []
+        for _ in range(len(row)):
+            random_list.append(random.randint(0, 1))
+        the_one = [x for i, x in enumerate(row) if random_list[i]]
+        others = [x for i, x in enumerate(row) if not random_list[i]]
+        input = self.tokenizer(self.tokenizer.sep_token.join(the_one), max_length=15, truncation=True, padding="max_length", return_tensors="pt")
+        target = self.tokenizer(self.tokenizer.sep_token.join(others), max_length=self.max_len, truncation=True, padding="max_length", return_tensors="pt")
 
         return {"input": input.input_ids.squeeze(), "target": target.input_ids.squeeze(), "attention_mask": input.attention_mask.squeeze(), "target_attention_mask": target.attention_mask.squeeze()}
 
