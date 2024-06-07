@@ -40,12 +40,13 @@ if config["wandb"]:
         wandb.init(
             # project=f"(Pretrained-T5) Unified Continuous Diffusion Models with Text Encoder-Decoder",
             # project=f"Unified Continuous Diffusion Models with Text Encoder-Decoder",
-            project=f"(No Order) Autoregressive Baseline",
+            project=f"(Updated No Order) Autoregressive Baseline",
             config=config,
             name=run_name,
         )
 # Train the model
 step = 0
+best_recall = 0
 for epoch in range(config["epochs"]):
     model.train()
     loop = tqdm(dataloader, leave=True)
@@ -149,7 +150,9 @@ for epoch in range(config["epochs"]):
                     "Test F1 Score epoch": 2 * (precision * recall) / (precision + recall)
                 }
             )
-    if (epoch + 1) % 10 == 0:
-        torch.save(model.state_dict(), f"AR_Model_epoch{epoch + 1}.pt")
+    if recall > best_recall:
+        best_recall = recall
+        print("Saving model... at epoch", epoch + 1)
+        torch.save(model.state_dict(), f"AR_best_Model.pt")
 wandb.finish()
 print("Training complete!")

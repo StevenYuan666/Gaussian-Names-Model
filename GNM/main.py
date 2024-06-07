@@ -9,6 +9,7 @@ from data.dataloader import DateDataset
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import os
+from sinkhorn import SinkhornSolver
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 os.environ["PYTORCH_USE_CUDA_DSA"] = "1"
@@ -43,7 +44,8 @@ if config["wandb"]:
 
 model = GaussianNamesModel(config, dataset.tokenizer)
 model.to(config["device"])
-loss_fn = torch.nn.CrossEntropyLoss()
+# loss_fn = torch.nn.CrossEntropyLoss()
+loss_fn = SinkhornSolver(epsilon=0.1)
 optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
 # Train the model
 step = 0
@@ -54,7 +56,7 @@ for epoch in range(config["epochs"]):
         x = x.to(config["device"])  # (batch_size, num_of_properties, max_len)
         x = x.long()
         prediction = model(x)
-        loss = loss_fn(prediction.view(-1, prediction.size(-1)), x.view(-1))
+        loss, _ = loss_fn(prediction.view(-1, prediction.size(-1)), x.view(-1))
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
