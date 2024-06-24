@@ -12,14 +12,13 @@ class DateDataset(Dataset):
     def __init__(self, df, config, max_len=15, size=None):
         if size:
             df = df.sample(size)
-        self.df = df
+        # only keep first 9 columns
+        self.df = df[df.columns[:9]]
         self.config = config
         if config["tokenizer"] == "gpt2":
             tokenizer = GPT2Tokenizer()
         elif config["tokenizer"] == "t5-small":
             tokenizer = T5Tokenizer.from_pretrained("google-t5/t5-small")
-            tokenizer.add_tokens(["<cls>"])
-            tokenizer.cls_token = "<cls>"
         self.tokenizer = tokenizer
         self.max_len = max_len
         config.update(
@@ -39,11 +38,11 @@ class DateDataset(Dataset):
         for column_value in row:
             if self.config["tokenizer"] == "gpt2":
                 encoded = self.tokenizer.encode(
-                    self.tokenizer.cls_token + " " + column_value,
+                    column_value,
                 )
             elif self.config["tokenizer"] == "t5-small":
                 encoded = self.tokenizer.encode(
-                    self.tokenizer.cls_token + " " + column_value,
+                    column_value,
                 )
             if len(encoded) < self.max_len:
                 encoded += [self.tokenizer.pad_token_id] * (self.max_len - len(encoded))
@@ -64,11 +63,11 @@ class TestDateDataset(DateDataset):
         for column_value in row:
             if self.config["tokenizer"] == "gpt2":
                 encoded = self.tokenizer.encode(
-                    self.tokenizer.cls_token + " " + column_value,
+                    column_value,
                 )
             elif self.config["tokenizer"] == "t5-small":
                 encoded = self.tokenizer.encode(
-                    self.tokenizer.cls_token + " " + column_value,
+                    column_value,
                 )
             if len(encoded) < self.max_len:
                 encoded += [self.tokenizer.pad_token_id] * (self.max_len - len(encoded))
@@ -90,8 +89,7 @@ class ARDateDataset(Dataset):
             tokenizer = GPT2Tokenizer()
         elif config["tokenizer"] == "t5-small":
             tokenizer = T5Tokenizer.from_pretrained("google-t5/t5-small")
-            tokenizer.add_tokens(["<cls>", "<sep>"])
-            tokenizer.cls_token = "<cls>"
+            tokenizer.add_tokens(["<sep>"])
             tokenizer.sep_token = "<sep>"
         self.tokenizer = tokenizer
         self.max_len = max_len

@@ -189,6 +189,8 @@ class TextEncoder(nn.Module):
 
         x = self(x, attention_mask, padding_mask, is_causal=is_causal)
         x = self.readout(x)
+        # Normalize the output
+        x = x / x.norm(dim=-1, keepdim=True)
         return x
 
     def forward(
