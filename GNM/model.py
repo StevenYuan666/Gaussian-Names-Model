@@ -4,7 +4,7 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 import numpy as np
 import torch.backends.cudnn as cudnn
 import random
-from .modules import TextModule
+from modules import TextModule
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -22,6 +22,18 @@ def q_sample(x_0, t, betas):
     noise = noise.to(device)
     x_t = torch.sqrt(alpha_cumprod_t) * x_0 + torch.sqrt(1.0 - alpha_cumprod_t) * noise
     return x_t, noise
+
+
+def revert_xt_to_x0(xt, noise_pred, betas, t):
+    alpha_t = 1.0 - betas[t]
+    alpha_cumprod_t = torch.tensor(np.cumprod(alpha_t)).to(device)
+    x0_pred = (xt - torch.sqrt(1.0 - alpha_cumprod_t) * noise_pred) / torch.sqrt(alpha_cumprod_t)
+    return x0_pred
+
+
+# Denoise x_t to x_t-1
+# def denoise_one_step(xt, noise_pred, betas, t):
+
 
 
 # Define the Denoising Model
@@ -116,3 +128,53 @@ class GaussianNamesModel(nn.Module):
             prediction.append(output)
         prediction = torch.cat(prediction, dim=1)  # (batch_size, num_of_properties, max_len, vocab_size)
         return prediction
+
+    def inference(self, x, mask):
+        # mask is a binary tensor of the same shape as x, where 0 indicates the tokens to be masked
+        # Encode the text
+        target = torch.zeros(x.shape[0], x.shape[1], self.config["d_model"]).to(self.config["device"])
+        for j in range(x.shape[1]):
+            if self.config["text_model"] == "custom":
+                output = self.text_model.encoder(
+                    x[:, j, :], padding_mask=(x[:, j, :] != 0).double()
+                )  # (batch_size, max_len, d_model)
+            else:
+                output = self.text_model.encoder(
+                    x[:, j, :], attention_mask=(x[:, j, :] != 0).double()
+                )  # (batch_size, max_len, d_model)
+            if self.config["text_model"] == "custom":
+                target[:, j] = output[:, 0]  # (batch_size, d_model)
+            else:
+                target[:, j] = output.last_hidden_state[:, 0]  # (batch_size, d_model)
+
+        # Initialize the random prior
+        generated = torch.randn_like(target)
+        generated = generated.to(device)
+
+        # Denoise
+        for t in range(999, -1, -1):
+            generated = self.model(generated, t)
+            # for the mask tokens, we keep the predicted values, for the rest we use ground truth
+            ground_truth, _ = q_sample(target, t, self.betas)
+            for i, m in enumerate(mask):
+                if m:
+                    generated[:, i] = ground_truth[:, i]
+
+        # Decode generated back to text
+        prediction = []
+        for j in range(generated.shape[1]):
+            target = self.text_model._shift_right(x[:, j, :])  # (batch_size, max_len)
+            if self.config["text_model"] == "custom":
+                output = self.text_model.decoder(
+                    input_ids=target, encoder_hidden_states=generated[:, j, :].unsqueeze(1)
+                )
+            else:
+                output = self.text_model.decoder(input_ids=target)  # (batch_size, max_len, vocab_size)
+            output = output.unsqueeze(1)
+            prediction.append(output)
+        prediction = torch.cat(prediction, dim=1)  # (batch_size, num_of_properties, max_len, vocab_size)
+
+        return prediction
+
+
+

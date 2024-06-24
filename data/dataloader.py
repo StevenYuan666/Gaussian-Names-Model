@@ -53,6 +53,33 @@ class DateDataset(Dataset):
         return torch.tensor(target)
 
 
+class TestDateDataset(DateDataset):
+    def __init__(self, df, config, max_len=15, size=None):
+        super().__init__(df, config, max_len, size)
+        self.df = df[:size]
+
+    def __getitem__(self, index):
+        row = self.df.iloc[index]
+        target = []
+        for column_value in row:
+            if self.config["tokenizer"] == "gpt2":
+                encoded = self.tokenizer.encode(
+                    self.tokenizer.cls_token + " " + column_value,
+                )
+            elif self.config["tokenizer"] == "t5-small":
+                encoded = self.tokenizer.encode(
+                    self.tokenizer.cls_token + " " + column_value,
+                )
+            if len(encoded) < self.max_len:
+                encoded += [self.tokenizer.pad_token_id] * (self.max_len - len(encoded))
+            else:
+                encoded = encoded[: self.max_len]
+            target.append(encoded)
+        random_list = []
+        for _ in range(len(row)):
+            random_list.append(random.randint(0, 1))
+        return {"target": torch.tensor(target), "mask": torch.tensor(random_list)}
+
 class ARDateDataset(Dataset):
     def __init__(self, df, config, max_len=128, size=None):
         if size:
