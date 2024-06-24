@@ -246,13 +246,18 @@ for epoch in range(config["epochs"]):
         wandb.log(
             {
                 "train_loss_epoch": train_loss / len(dataloader),
+                "epoch": epoch + 1,
                 # "test_loss_epoch": test_loss / len(test_dataloader),
             }
         )
-    if test_loss < best_test_loss:
-        best_test_loss = test_loss
+    # if test_loss < best_test_loss:
+    #     best_test_loss = test_loss
+    #     print("Saving model... at epoch", epoch + 1)
+    #     torch.save(model.state_dict(), f"./saved/denoise_best_model.pt")
+    #     torch.save(text_model.state_dict(), f"./saved/text_best_model.pt")
+    if (epoch + 1) % 10 == 0:
         print("Saving model... at epoch", epoch + 1)
-        torch.save(model.state_dict(), f"./saved/denoise_best_model.pt")
-        torch.save(text_model.state_dict(), f"./saved/text_best_model.pt")
+        torch.save(model.state_dict(), f"./saved/denoise_model_{epoch + 1}.pt")
+        torch.save(text_model.state_dict(), f"./saved/text_model_{epoch + 1}.pt")
 wandb.finish()
 print("Training complete!")
