@@ -49,8 +49,8 @@ df = pd.DataFrame.from_dict(data, orient="index")
 config = parse_args(config)
 # Create dataset and dataloader
 dataset = DateDataset(df, config)
-test_dataset = TestDateDataset(df, config, size=100)
-dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
+test_dataset = TestDateDataset(df, config, size=5)
+dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
 if config["wandb"]:
@@ -62,7 +62,7 @@ if config["wandb"]:
             # project=f"(Pretrained-T5) Unified Continuous Diffusion Models with Text Encoder-Decoder",
             # project=f"Unified Continuous Diffusion Models with Text Encoder-Decoder",
             # project=f"(No Order) Unified Continuous Diffusion Models with Text Encoder-Decoder",
-            project=f"(Train is also step by step) Fix Test Generation to AutoRegressive",
+            project=f"Fix Test Generation to AutoRegressive",
             config=config,
             name=run_name,
         )
@@ -101,7 +101,6 @@ for epoch in range(config["epochs"]):
 
         # Perturb the input
         t = torch.LongTensor([np.random.randint(0, 1000)])
-        # t = torch.LongTensor([999])
         # xt, noise = q_sample(x0, t, betas)  # (batch_size, num_of_properties, d_model)
         noise = torch.randn_like(x0)
         # print("t shape:", t.shape, t)
@@ -109,14 +108,10 @@ for epoch in range(config["epochs"]):
         # print("x0 shape:", x0.shape)
         xt = scheduler.add_noise(x0, noise, t)
         xt = xt.to(device)
-        for time in range(t, -1, -1):
-            noise = model(xt, time)
-            xt = scheduler.step(model_output=noise, timestep=torch.LongTensor([time]), sample=xt).prev_sample
-        # noise_pred = model(xt, t)  # (batch_size, num_of_properties, d_model)
+        noise_pred = model(xt, t)  # (batch_size, num_of_properties, d_model)
         # Convert xt back to x0_pred using the noise_pred
         # x0_pred = revert_xt_to_x0(xt, noise_pred, betas, t)
-        # x0_pred = scheduler.step(model_output=noise_pred, timestep=t, sample=xt).prev_sample
-        x0_pred = xt
+        x0_pred = scheduler.step(model_output=noise_pred, timestep=t, sample=xt).pred_original_sample
 
         # Decode the x0_pred back to text
         prediction = []
@@ -182,7 +177,7 @@ for epoch in range(config["epochs"]):
             # Replace the masked tokens with the ground truth noisy observation
             # ground_truth, _ = q_sample(x_label, t-1, betas)
 
-            ground_truth = scheduler.add_noise(x_label, torch.rand_like(x_label), torch.LongTensor([t-1]))
+            ground_truth = scheduler.add_noise(x_label, noise_pred, torch.LongTensor([t-1]))
             for i, m in enumerate(mask):
                 if m:
                     sample[:, i] = ground_truth[:, i]
@@ -218,10 +213,21 @@ for epoch in range(config["epochs"]):
                     current_input = torch.cat(
                         (current_input, torch.multinomial(probs, 1)), -1
                     )
-            output = current_input[:, 1:]   # (batch_size, max_len)
-            output = output.unsqueeze(1)  # (batch_size, 1, max_len)
+
+                # if all have EOS, stop
+                # if (current_input == self.text_model.tokenizer.eos_token_id).all():
+                #     break
+
+            output = current_input[:, 1:]
+            # if config["text_model"] == "custom":
+            #     output = text_model.decoder(
+            #         input_ids=target, encoder_hidden_states=sample[:, j, :].unsqueeze(1)
+            #     )
+            # else:
+            #     output = text_model.decoder(input_ids=target)  # (batch_size, max_len, vocab_size)
+            output = output.unsqueeze(1)
             prediction.append(output)
-        prediction = torch.cat(prediction, dim=1)  # (batch_size, num_of_properties, max_len)
+        prediction = torch.cat(prediction, dim=1)  # (batch_size, num_of_properties, max_len, vocab_size)
         # only calculate loss on the masked tokens
         mask = mask.unsqueeze(0)
         mask_prediction = prediction[mask == 0].view(-1, prediction.size(-1))

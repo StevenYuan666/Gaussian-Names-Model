@@ -27,7 +27,7 @@ common_defaults = {
     "dropout": 0.1,          # Dropout
     "train_mask_rate": -1.,   # Masking rate for properties during train
     "eval_mask_rate": 0.5,   # Masking rate for properties during eval
-    "wandb": 1,          # Use wandb for logging (requires wandb login) otherwise nothing is logged
+    "wandb": 0,          # Use wandb for logging (requires wandb login) otherwise nothing is logged
     "tags": [],        # Tags for wandb
     "device": "cuda",      # Device to use
     "seed": 42,              # Random seed used for model initialization and data shuffling
