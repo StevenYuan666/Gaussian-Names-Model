@@ -317,7 +317,7 @@ class _Transformer(nn.Module):
             layer.self_attn.in_proj_weight.data[: self.d_model, :] = 0
 
 
-class TransformerDecoder(_Transformer):
+class TransformerDecoder_custom(_Transformer):
     def __init__(self, num_layers, **layer_kwargs) -> None:
         super().__init__(
             kind="decoder",
@@ -351,7 +351,7 @@ class TransformerDecoder(_Transformer):
         return output
 
 
-class TransformerEncoder(_Transformer):
+class TransformerEncoder_custom(_Transformer):
     def __init__(self, num_layers, **layer_kwargs) -> None:
         super().__init__(
             kind="encoder",

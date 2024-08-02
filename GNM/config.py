@@ -6,7 +6,7 @@ rootdir = os.path.dirname(os.path.dirname(__file__))
 
 common_defaults = {
     "dataset": "gsm",         # gsm, nuclear, homedepot
-    "d_model": 32,             # Model dimension, must be divisible by nhead
+    "d_model": 512,             # Model dimension, must be divisible by nhead
     "d_ff_mult": 2,             # Multiplier for the inner dim in feed forward layer
     "nhead": 4,                 # Number of attention heads in Entity encoder + text model if custom
     "num_layers": 2,            # Entity encoder layers for entity Encoder
@@ -20,14 +20,14 @@ common_defaults = {
                                            # 0 means individual decoders. n>0 is the number of experts used.
     "condition_decoders_on_hierarchy": 0,
     "tie_mask_embeddings": 0,        # Tie mask embeddings across fields (mask embs are what the entity encoder sees)
-    "epochs": 50,          # Number of epochs to train for
+    "epochs": 100,          # Number of epochs to train for
     "batch_size": 1024,        # Batch size
-    "lr": 1e-2,              # Learning rate
+    "lr": 5e-5,              # Learning rate
     "weight_decay": 0.,     # Weight decay
     "dropout": 0.1,          # Dropout
     "train_mask_rate": -1.,   # Masking rate for properties during train
     "eval_mask_rate": 0.5,   # Masking rate for properties during eval
-    "wandb": 0,          # Use wandb for logging (requires wandb login) otherwise nothing is logged
+    "wandb": 1,          # Use wandb for logging (requires wandb login) otherwise nothing is logged
     "tags": [],        # Tags for wandb
     "device": "cuda",      # Device to use
     "seed": 42,              # Random seed used for model initialization and data shuffling

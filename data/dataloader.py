@@ -13,7 +13,7 @@ class DateDataset(Dataset):
         if size:
             df = df.sample(size)
         # only keep first 9 columns
-        self.df = df[df.columns[:1]]
+        self.df = df[df.columns[:9]]
         self.config = config
         if config["tokenizer"] == "gpt2":
             tokenizer = GPT2Tokenizer()
@@ -56,7 +56,7 @@ class TestDateDataset(DateDataset):
     def __init__(self, df, config, max_len=15, size=None):
         super().__init__(df, config, max_len, size)
         self.df = df[:size]
-        self.df = self.df[df.columns[:1]]
+        self.df = self.df[df.columns[:9]]
 
     def __getitem__(self, index):
         row = self.df.iloc[index]
@@ -78,6 +78,7 @@ class TestDateDataset(DateDataset):
         random_list = []
         for _ in range(len(row)):
             random_list.append(random.randint(0, 1))
+            # random_list.append(1)
         return {"target": torch.tensor(target), "mask": torch.tensor(random_list)}
 
 class ARDateDataset(Dataset):

@@ -189,8 +189,8 @@ class TextEncoder(nn.Module):
 
         x = self(x, attention_mask, padding_mask, is_causal=is_causal)
         x = self.readout(x)
-        # Normalize the output
-        x = x / x.norm(dim=-1, keepdim=True)
+        # Standardize the output shape
+        x = nn.Sigmoid()(x, dim=-1)
         return x
 
     def forward(

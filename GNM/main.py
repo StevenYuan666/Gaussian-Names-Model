@@ -1,3 +1,5 @@
+import torch
+
 from model import *
 import wandb
 from utils import parse_args
@@ -70,7 +72,7 @@ if config["wandb"]:
 # model = GaussianNamesModel(config, dataset.tokenizer)
 text_model = TextModule(config)
 model = TransformerDenoiseModel(feature_size=config["d_model"])
-# betas = linear_beta_schedule(T=1000)  # Define this function as provided in earlier steps
+betas = linear_beta_schedule(T=1000)  # Define this function as provided in earlier steps
 text_model.to(config["device"])
 model.to(config["device"])
 model.double()
@@ -164,25 +166,24 @@ for epoch in range(config["epochs"]):
             else:
                 x_label[:, j] = output.last_hidden_state[:, 0]  # (batch_size, d_model)
 
-        # Initialize the random prior
-        sample = torch.randn_like(x_label)
-        sample = sample.to(device)
-
         # Denoise
+        # Random prior
+        sample = torch.randn_like(x_label)
         for t in range(999, -1, -1):
-            noise_pred = model(sample, t)  # (batch_size, num_of_properties, d_model)
-            # denoise the generated to x_t-1
-            # x_t_1 = denoise_one_step(generated, noise_pred, betas, t)
-            x_t_1 = scheduler.step(model_output=noise_pred, timestep=torch.LongTensor([t]), sample=sample).prev_sample
-            # Replace the masked tokens with the ground truth noisy observation
-            # ground_truth, _ = q_sample(x_label, t-1, betas)
-
-            ground_truth = scheduler.add_noise(x_label, noise_pred, torch.LongTensor([t-1]))
-            for i, m in enumerate(mask):
-                if m:
-                    sample[:, i] = ground_truth[:, i]
-                else:
-                    sample[:, i] = x_t_1[:, i]
+            for j in range(5): # Harmonization process, see Diffimpute
+                # Initialize the random prior
+                noise = torch.randn_like(x_label)
+                noise = noise.to(device)
+                ground_truth = scheduler.add_noise(x_label, noise, torch.LongTensor([t-1]))
+                noise_pred = model(sample, t)  # (batch_size, num_of_properties, d_model)
+                x_t_1 = scheduler.step(model_output=noise_pred, timestep=torch.LongTensor([t]), sample=sample).prev_sample
+                # Replace the masked tokens with the ground truth noisy observation
+                for i, m in enumerate(mask):
+                    if m.item():
+                        sample[:, i] = ground_truth[:, i]
+                    else:
+                        sample[:, i] = x_t_1[:, i]
+                sample = torch.sqrt(torch.tensor(1 - betas[t])) * sample + torch.sqrt(torch.tensor(betas[t])) * noise
 
 
         # Decode generated back to text
