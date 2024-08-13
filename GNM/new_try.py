@@ -307,11 +307,15 @@ class LMHead(nn.Module):
     def forward(self, x):
         return self.linear(x)
 
+
 # Define the Diffusion Model
 import torch
 import torch.nn as nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 class TransformerDenoiseModel(nn.Module):
     def __init__(self, feature_size, num_layers=6, nhead=8, dim_feedforward=2048):
         super().__init__()
@@ -344,7 +348,9 @@ class PositionalE(nn.Module):
     def forward(self, t, batch_size, feature_size):
         pos_emb = self.pe[t, :].unsqueeze(1)
         pos_emb = pos_emb.expand(batch_size, feature_size, -1)
-        return nn.Sigmoid()(pos_emb)
+        # return nn.Sigmoid()(pos_emb)  # TODO: maybe no sigmoid here?
+        return pos_emb
+
 
 class Diffusion(nn.Module):
     def __init__(self, model, num_columns, emb_dim, n_times=1000, beta_minmax=[1e-4, 2e-2], device='cuda'):
@@ -442,14 +448,14 @@ class Diffusion(nn.Module):
         # denoise at time t, utilizing predicted noise
         x_t_minus_1 = 1 / sqrt_alpha * (x_t - (1 - alpha) / sqrt_one_minus_alpha_bar * epsilon_pred) + sqrt_beta * z
 
-        return x_t_minus_1.clamp(-1., 1)
+        return x_t_minus_1.clamp(-1., 1)  # TODO: clamp to -1, 1 optional?
 
     def predict(self, x, mask):
         # start from random noise vector, x_0 (for simplicity, x_T declared as x_t instead of x_T)
         x_t = torch.randn((x.size(0), self.num_columns, self.emb_dim)).to(self.device)
         # Denoise
         for t in range(self.n_times - 1, -1, -1):
-            for j in range(5): ## Harmonization
+            for j in range(5):  ## Harmonization
                 timestep = torch.tensor([t]).repeat_interleave(x.size(0), dim=0).long().to(self.device)
                 x_t_1_unknown = self.denoise_at_t(x_t, timestep, t)
                 if t > 0:
@@ -465,13 +471,47 @@ class Diffusion(nn.Module):
                         x_t_1[:, i] = x_t_1_unknown[:, i]
                 if j < 4 and t > 0:
                     # Add noise for one step
-                    x_t = self.sqrt_alphas[t] * x_t_1 + self.sqrt_betas[t] * epsilon.to(self.device)
+                    sqrt_alpha = self.extract(self.sqrt_alphas, timestep, x_t.shape)
+                    sqrt_beta = self.extract(self.sqrt_betas, timestep, x_t.shape)
+                    x_t = sqrt_alpha * x_t_1 + sqrt_beta * epsilon.to(
+                        self.device)  # TODO: double check the formula here!!
                 else:
                     x_t = x_t_1
 
-        x_0 = self.reverse_scale_to_zero_to_one(x_t) # reverse normalization
+        x_0 = self.reverse_scale_to_zero_to_one(x_t)  # reverse normalization
         # x_0 = x_t
         return x_0
+
+    def predict_back_to_x0(self, x, x_t, time, mask):
+        # Denoise
+        for t in range(time - 1, -1, -1):
+            for j in range(5):
+                timestep = torch.tensor([t]).repeat_interleave(x_t.size(0), dim=0).long().to(self.device)
+                x_t_1_unknown = self.denoise_at_t(x_t, timestep, t)
+                if t > 0:
+                    x_t_1_known, epsilon = self.make_noisy(x, timestep - 1)
+                else:
+                    x_t_1_known = x
+                    epsilon = torch.zeros_like(x).to(self.device)
+                x_t_1 = torch.zeros_like(x).to(self.device)
+                for b in range(mask.size(0)):
+                    for i, m in enumerate(mask[b]):
+                        if m.item():
+                            x_t_1[b, i] = x_t_1_known[b, i]
+                        else:
+                            x_t_1[b, i] = x_t_1_unknown[b, i]
+                if j < 4 and t > 0:
+                    # Add noise for one step
+                    sqrt_alpha = self.extract(self.sqrt_alphas, timestep, x_t.shape)
+                    sqrt_beta = self.extract(self.sqrt_betas, timestep, x_t.shape)
+                    x_t = sqrt_alpha * x_t_1 + sqrt_beta * epsilon.to(
+                        self.device)
+                else:
+                    x_t = x_t_1
+
+        x_0 = self.reverse_scale_to_zero_to_one(x_t)  # reverse normalization
+        return x_0
+
 
 # Import Dataloader
 import json
@@ -480,6 +520,8 @@ from data.dataloader import DateDataset, TestDateDataset
 from torch.utils.data import DataLoader
 from config import defaults_customLM as config
 from utils import parse_args
+from torch.optim.lr_scheduler import CosineAnnealingLR
+
 # Load JSON data
 with open("/home/admin1/Documents/Gaussian-Names-Model/data/date_dataset.json", "r") as file:
     data = json.load(file)
@@ -495,38 +537,57 @@ test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
 # Train the model
 import wandb
+
 if config["wandb"]:
-        run_name = (
-            f"lr{config['lr']}_wd{config['weight_decay']}"
-        )
-        wandb.login()
-        wandb.init(
-            project=f"New Try",
-            config=config,
-            name=run_name,
-        )
+    run_name = (
+        f"lr{config['lr']}_wd{config['weight_decay']}"
+    )
+    wandb.login()
+    wandb.init(
+        project=f"New Try discussed with Haolun",
+        config=config,
+        name=run_name,
+    )
 from tqdm import tqdm
+
 model = TransformerDenoiseModel(feature_size=config["d_model"]).to(device)
 diffusion = Diffusion(model, num_columns=9, emb_dim=config["d_model"], device=device).to(device)
 text_model = TextModule(config).to(device)
-print(f"Model has {(sum(p.numel() for p in model.parameters() if p.requires_grad)) + (sum(p.numel() for p in text_model.parameters() if p.requires_grad))} trainable parameters")
-optimizer = torch.optim.Adam(nn.ModuleList([text_model, diffusion]).parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
-loss_fn = nn.CrossEntropyLoss()
+# load pretrained model
+text_model.load_state_dict(torch.load("./saved/text_model_use_ce+mse.pt"))
+print("Successfully loaded the pretrained text model")
+diffusion.load_state_dict(torch.load("./saved/diffusion_model_use_mse_only.pt"))
+print("Successfully loaded the pretrained diffusion model")
+# print(
+#     f"Model has {(sum(p.numel() for p in model.parameters() if p.requires_grad)) + (sum(p.numel() for p in text_model.parameters() if p.requires_grad))} trainable parameters")
+print(f"Model has {sum(p.numel() for p in diffusion.parameters() if p.requires_grad)} trainable parameters")
+# optimizer = torch.optim.Adam(nn.ModuleList([text_model, diffusion]).parameters(), lr=config["lr"],
+#                              weight_decay=config["weight_decay"])
+optimizer = torch.optim.Adam(diffusion.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
+scheduler = CosineAnnealingLR(optimizer, T_max=10, eta_min=1e-5)
+ce_loss_fn = nn.CrossEntropyLoss()
+mse_loss_fn = nn.MSELoss()
 epochs = 50
 
 print("Start training DDPMs...")
 model.train()
-text_model.train()
+# text_model.train()
+diffusion.train()
 step = 0
 best_test_loss = float("inf")
 for epoch in range(config["epochs"]):
     model.train()
+    diffusion.train()
+    # text_model.train()
     loop = tqdm(dataloader, leave=True)
     train_loss = 0
-    for x in loop:
+    for d in loop:
         # Encode the text
+        x = d["target"]
+        mask = d["mask"]
         x = x.to(config["device"])  # (batch_size, num_of_properties, max_len)
-        x0 = torch.zeros(x.shape[0], x.shape[1], config["d_model"]).to(config["device"])
+        x0 = torch.zeros(x.shape[0], x.shape[1], config["d_model"]).to(
+            config["device"])  # (batch_size, num_of_properties, d_model)
         for j in range(x.shape[1]):
             output = text_model.encoder(
                 x[:, j, :], padding_mask=(x[:, j, :] != 0).float()
@@ -536,21 +597,28 @@ for epoch in range(config["epochs"]):
         # Perturb the data
         x_t, epsilon, pred_epsilon, t = diffusion(x0)
         # Use the predicted noise to predict the original data
-        x0_pred = diffusion.denoise_back_to_x0(x_t, pred_epsilon, t)
+        x0_pred = diffusion.denoise_back_to_x0(x_t, pred_epsilon, t) # TODO: used
+        # x0_pred = diffusion.predict_back_to_x0(x0, x_t, t.squeeze()[0], mask)  # TODO: used
         # Generate the text based on the reconstructed data
         prediction = []
         loss = 0
         for j in range(x0_pred.shape[1]):
             target = text_model._shift_right(x[:, j, :])  # (batch_size, max_len)
-            output = text_model.decoder(target, x0[:, j].unsqueeze(1))  # (batch_size, max_len, vocab_size)
+            output = text_model.decoder(target, x0_pred[:, j].unsqueeze(
+                1))  # (batch_size, max_len, vocab_size) # TODO: x0_pred instead of x0? Still use x0 here but loss add a MSE error between x0 and x0_pred or use x0_pred with pretrained text model and mse loss only
             output = output.unsqueeze(1)
             prediction.append(output)
         prediction = torch.cat(prediction, dim=1)  # (batch_size, num_of_properties, max_len, vocab_size)
         # print("predcition shape:", prediction.shape)
         # print("x shape:", x.shape)
-        loss = loss_fn(prediction.view(-1, prediction.size(-1)), x.view(-1))
+        # loss = ce_loss_fn(prediction.view(-1, prediction.size(-1)), x.view(-1)) + mse_loss_fn(pred_epsilon, epsilon)
+        loss = mse_loss_fn(pred_epsilon, epsilon)
+        # loss = ce_loss_fn(prediction.view(-1, prediction.size(-1)), x.view(-1))
         optimizer.zero_grad()
         loss.backward()
+        # nn.utils.clip_grad_norm_(diffusion.parameters(), 1.0)
+        # nn.utils.clip_grad_norm_(text_model.parameters(), 1.0)
+        # nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
         loop.set_description(f"Epoch [{epoch + 1}/{config['epochs']}]")
         loop.set_postfix(loss=loss.item())
@@ -558,13 +626,16 @@ for epoch in range(config["epochs"]):
         if step % 625 == 0:
             print()
             print(f"Training Epoch: {epoch + 1}, Step: {step}")
-            print("Prediction:", dataset.tokenizer.batch_decode(torch.argmax(prediction[0], dim=-1), skip_special_tokens=True))
+            print("Prediction:",
+                  dataset.tokenizer.batch_decode(torch.argmax(prediction[0], dim=-1), skip_special_tokens=True))
             print("Ground truth:", dataset.tokenizer.batch_decode(x[0], skip_special_tokens=True))
         step += 1
     print(f"Epoch [{epoch + 1}/{config['epochs']}], Loss: {train_loss / len(dataloader)}")
     # scheduler.step()
     test_loss = 0
     model.eval()
+    diffusion.eval()
+    text_model.eval()
     test_count = 0
     for d in test_dataloader:
         x = d["target"]
@@ -641,8 +712,8 @@ for epoch in range(config["epochs"]):
     #     torch.save(text_model.state_dict(), f"./saved/text_best_model.pt")
 wandb.finish()
 print("Saving model at the end:")
-torch.save(model.state_dict(), f"./saved/denoise_model_new_try.pt")
-torch.save(text_model.state_dict(), f"./saved/text_model_new_try.pt")
-torch.save(diffusion.state_dict(), f"./saved/diffusion_model_new_try.pt")
+torch.save(model.state_dict(), f"./saved/denoise_model_use_mse_only.pt")
+torch.save(text_model.state_dict(), f"./saved/text_model_use_mse_only.pt")
+torch.save(diffusion.state_dict(), f"./saved/diffusion_model_use_mse_only.pt")
 print("Successfully saved the model!")
 print("Training complete!")

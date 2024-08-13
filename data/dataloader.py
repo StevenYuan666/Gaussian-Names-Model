@@ -49,7 +49,10 @@ class DateDataset(Dataset):
             else:
                 encoded = encoded[: self.max_len]
             target.append(encoded)
-        return torch.tensor(target)
+        random_list = []
+        for _ in range(len(row)):
+            random_list.append(random.randint(0, 1))
+        return {"target": torch.tensor(target), "mask": torch.tensor(random_list)}
 
 
 class TestDateDataset(DateDataset):
